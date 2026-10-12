@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pro Teleprompter</title>
+    
+    <!-- PWA Meta Tags for Offline Mobile App Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" id="manifest-link">
+    
+    <!-- Import Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Import Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Import FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- WebRTC and QRCode for Mobile Remote Feature -->
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000;
+            color: #fff;
+            overflow: hidden; /* Prevent native scrolling */
+        }
+
+        /* Custom Scrollbar for Settings */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #1f2937; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+
+        /* Mirroring Transforms */
+        .mirror-x { transform: scaleX(-1); }
+        .mirror-y { transform: scaleY(-1); }
+        .mirror-xy { transform: scale(-1, -1); }
+
+        /* Hide cursor during playback */
+        .cursor-hidden { cursor: none !important; }
+
+        /* Smooth settings panel transition */
+        .settings-panel { transition: transform 0.3s ease-in-out; }
+        .settings-hidden { transform: translateY(-100%); }
+    </style>
+</head>
+<body class="w-screen h-screen">
+
+    <div id="settings-panel" class="settings-panel absolute top-0 left-0 w-full bg-gray-900 border-b border-gray-700 z-50 flex flex-col shadow-2xl custom-scrollbar overflow-y-auto p-6 max-h-[90vh]">
+        <!-- Top Panel Header -->
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-2xl font-bold text-blue-400 flex items-center">
+                <i class="fa-solid fa-camera text-xl mr-2"></i> Prompter Pro
+            </h1>
+            <button onclick="hideSettings()" class="text-gray-400 hover:text-white transition cursor-pointer">
+                <i class="fa-solid fa-xmark text-3xl"></i>
+            </button>
+        </div>
+
+        <!-- Settings Grid Layout -->
+        <div class="flex-grow grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Script Input -->
+            <div class="lg:col-span-1 flex flex-col">
+                <label class="block text-sm font-bold text-gray-400 mb-2 uppercase tracking-wider">Your Script</label>
+                <textarea id="script-input" rows="12" class="w-full flex-grow bg-gray-800 border border-gray-600 rounded p-3 text-white focus:outline-none focus:border-blue-500 resize-y" placeholder="Paste your script here..."></textarea>
+            </div>
+
+            <!-- Controls Group -->
+            <div class="lg:col-span-1 flex flex-col justify-center space-y-8">
+                <!-- Speed Control -->
+                <div>
+                    <label class="flex justify-between items-center text-sm font-bold text-gray-400 mb-3">
+                        <span>Scroll Speed</span>
+                        <input type="number" id="speed-input" min="1" max="50" class="w-20 bg-gray-800 border border-gray-600 rounded p-1 text-white text-center focus:outline-none focus:border-blue-500 text-lg">
+                    </label>
+                    <input type="range" id="speed-slider" min="1" max="50" value="15" class="w-full accent-blue-500">
+                </div>
+
+                <!-- Font Size Control -->
+                <div>
+                    <label class="flex justify-between items-center text-sm font-bold text-gray-400 mb-3">
+                        <span>Font Size (px)</span>
+                        <input type="number" id="font-size-input" min="20" max="300" class="w-20 bg-gray-800 border border-gray-600 rounded p-1 text-white text-center focus:outline-none focus:border-blue-500 text-lg">
+                    </label>
+                    <input type="range" id="font-size-slider" min="20" max="200" value="80" class="w-full accent-blue-500">
+                </div>
+
+                <!-- Margin Control -->
+                <div>
+                    <label class="flex justify-between items-center text-sm font-bold text-gray-400 mb-3">
+                        <span>Side Margins (%)</span>
+                        <input type="number" id="margin-input" min="0" max="45" class="w-20 bg-gray-800 border border-gray-600 rounded p-1 text-white text-center focus:outline-none focus:border-blue-500 text-lg">
+                    </label>
+                    <input type="range" id="margin-slider" min="0" max="40" value="15" class="w-full accent-blue-500">
+                </div>
+            </div>
+
+            <!-- Display Settings & Actions -->
+            <div class="lg:col-span-1 flex flex-col justify-between space-y-6">
+                <div class="space-y-4 bg-gray-800/40 p-5 rounded-lg border border-gray-700">
+                    <label class="block text-sm font-bold text-gray-400 mb-3 uppercase tracking-wider">Display Settings</label>
+                    
+                    <label class="flex items-center space-x-3 cursor-pointer">
+                        <input type="checkbox" id="mirror-x-toggle" class="w-5 h-5 rounded text-blue-500 bg-gray-800 border-gray-600 focus:ring-blue-500">
+                        <span>Mirror Horizontal (Standard)</span>
+                    </label>
+                    
+                    <label class="flex items-center space-x-3 cursor-pointer">
+                        <input type="checkbox" id="mirror-y-toggle" class="w-5 h-5 rounded text-blue-500 bg-gray-800 border-gray-600 focus:ring-blue-500">
+                        <span>Mirror Vertical (Upside Down)</span>
+                    </label>
+
+                    <label class="flex items-center space-x-3 cursor-pointer mt-4">
+                        <input type="checkbox" id="eyeline-toggle" checked class="w-5 h-5 rounded text-blue-500 bg-gray-800 border-gray-600 focus:ring-blue-500">
+                        <span>Show Highlight Guide</span>
+                    </label>
+                </div>
+
+                <!-- Mobile Remote Section -->
+                <div class="space-y-3 bg-gray-800/40 p-4 rounded-lg border border-gray-700">
+                    <label class="block text-sm font-bold text-gray-400 uppercase tracking-wider flex justify-between items-center">
+                        Phone Remote
+                        <span id="remote-status-indicator" class="text-xs text-yellow-500 font-normal">Connecting...</span>
+                    </label>
+                    <p class="text-xs text-gray-400">Scan to control this screen from your phone.</p>
+                    <div id="qrcode-container" class="bg-white p-2 w-max mx-auto rounded hidden"></div>
+                    <button id="copy-link-btn" class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-white transition hidden flex items-center justify-center">
+                        <i class="fa-solid fa-link mr-2"></i> Copy Remote Link
+                    </button>
+                </div>
+
+                <!-- Bottom Actions -->
+                <div class="flex flex-col gap-3 mt-auto">
+                    <button id="toggle-fullscreen-btn" class="w-full py-2 bg-gray-800 hover:bg-gray-700 rounded text-white font-semibold transition flex justify-center items-center border border-gray-600">
+                        <i class="fa-solid fa-expand mr-2"></i> Enter Fullscreen
+                    </button>
+                    <div class="flex gap-2">
+                        <button id="reset-btn" class="w-1/3 py-3 bg-red-600 hover:bg-red-500 rounded text-white font-bold transition flex justify-center items-center">
+                            <i class="fa-solid fa-rotate-left"></i>
+                        </button>
+                        <button id="play-btn" class="w-2/3 py-3 bg-blue-600 hover:bg-blue-500 rounded text-white font-bold transition flex justify-center items-center text-lg shadow-[0_0_15px_rgba(37,99,235,0.4)]">
+                            <i class="fa-solid fa-play mr-2"></i> Play
+                        </button>
+                    </div>
+                    <div class="text-xs text-gray-500 text-center">
+                        <b>Space</b>: Play/Pause &bull; <b>Up/Down</b>: Speed &bull; <b>Touchpad/W/S</b>: Scroll
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Prompter View Container -->
+    <div id="prompter-container" class="absolute top-0 left-0 w-full h-full flex justify-center z-10 pointer-events-none">
+        
+        <!-- Eye-line Indicator / Highlighter (Behind Text: z-0) -->
+        <div id="eyeline-indicator" class="absolute top-1/4 left-0 w-full h-28 flex items-center justify-between z-0 pointer-events-none">
+            <!-- Left Edge Indicator -->
+            <div class="w-6 h-full bg-red-600 rounded-r shadow-[2px_0_15px_rgba(220,38,38,0.8)]"></div>
+            <!-- Center Transparent Highlight Area -->
+            <div class="w-full h-full bg-red-600/30 border-y-2 border-red-500/60 shadow-[0_0_20px_rgba(220,38,38,0.3)]"></div>
+            <!-- Right Edge Indicator -->
+            <div class="w-6 h-full bg-red-600 rounded-l shadow-[-2px_0_15px_rgba(220,38,38,0.8)]"></div>
+        </div>
+
+        <!-- Text Wrapper (Where mirroring is applied) -->
+        <div id="text-wrapper" class="relative z-10 w-full h-full transform transition-transform duration-300">
+            <!-- Text Content -->
+            <div id="text-content" class="w-full text-white font-bold leading-relaxed whitespace-pre-wrap pt-[50vh] pb-[100vh] drop-shadow-lg" style="font-size: 80px; padding-left: 15%; padding-right: 15%;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Toggle Settings Button (Visible when settings are hidden) -->
+    <button id="show-settings-btn" class="absolute top-4 left-4 z-40 bg-gray-800/50 hover:bg-gray-800 text-white w-12 h-12 rounded-full hidden flex items-center justify-center backdrop-blur transition pointer-events-auto shadow-lg">
+        <i class="fa-solid fa-gear text-xl"></i>
+    </button>
+
+    <!-- Mini Controls Menu (Visible during playback on touch/mouse movement) -->
+    <div id="mini-controls" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-full px-6 py-3 flex gap-4 items-center shadow-2xl transition-all duration-300 opacity-0 pointer-events-none translate-y-4">
+        <button onclick="changeSpeed(-1)" class="w-10 h-10 flex items-center justify-center text-white bg-gray-800 hover:bg-gray-700 rounded-full text-xl transition"><i class="fa-solid fa-minus"></i></button>
+        <div class="text-xs text-gray-400 font-bold mx-1">SPEED</div>
+        <button onclick="changeSpeed(1)" class="w-10 h-10 flex items-center justify-center text-white bg-gray-800 hover:bg-gray-700 rounded-full text-xl transition"><i class="fa-solid fa-plus"></i></button>
+        <div class="w-px h-8 bg-gray-600 mx-2"></div>
+        <button onclick="togglePlay()" class="w-14 h-14 flex items-center justify-center text-white bg-blue-600 hover:bg-blue-500 rounded-full text-2xl transition shadow-[0_0_15px_rgba(37,99,235,0.4)]"><i class="fa-solid fa-pause"></i></button>
+        <div class="w-px h-8 bg-gray-600 mx-2"></div>
+        <button onclick="showSettings()" class="w-10 h-10 flex items-center justify-center text-white bg-gray-800 hover:bg-gray-700 rounded-full text-xl transition"><i class="fa-solid fa-gear"></i></button>
+    </div>
+
+    <!-- Mobile Remote Interface -->
+    <div id="mobile-remote-view" class="fixed inset-0 bg-gray-900 z-[100] hidden flex-col items-center justify-start pt-12 px-6 space-y-6 overflow-y-auto w-full h-full">
+        <h1 class="text-2xl font-bold text-blue-400 mb-2 flex items-center"><i class="fa-solid fa-mobile-screen-button mr-2"></i> Prompter Remote</h1>
+        <div id="remote-connection-status" class="text-yellow-400 mb-8 font-semibold bg-gray-800 px-4 py-2 rounded-full shadow">Connecting to host...</div>
+        
+        <div class="flex gap-4 w-full max-w-md">
+            <button id="remote-slower-btn" class="flex-1 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded-2xl py-8 text-white font-bold text-xl shadow-lg flex flex-col items-center transition"><i class="fa-solid fa-backward-step mb-2 text-3xl text-gray-400"></i> Slower</button>
+            <button id="remote-faster-btn" class="flex-1 bg-gray-800 border border-gray-600 active:bg-gray-700 rounded-2xl py-8 text-white font-bold text-xl shadow-lg flex flex-col items-center transition"><i class="fa-solid fa-forward-step mb-2 text-3xl text-gray-400"></i> Faster</button>
+        </div>
+        
+        <button id="remote-play-btn" class="w-full max-w-md bg-blue-600 active:bg-blue-500 rounded-3xl py-12 text-white font-bold text-3xl shadow-[0_0_20px_rgba(37,99,235,0.4)] flex flex-col items-center transition"><i class="fa-solid fa-play mb-3 text-5xl"></i> Play / Pause</button>
+        
+        <!-- Manual Scroll Buttons -->
+        <div class="flex gap-4 w-full max-w-md mt-4">
+            <button id="remote-scroll-up-btn" class="flex-1 bg-gray-700 active:bg-gray-600 rounded-2xl py-6 text-white font-bold text-xl shadow-lg flex flex-col items-center transition select-none"><i class="fa-solid fa-angles-up mb-2 text-3xl text-gray-400"></i> Scroll Up</button>
+            <button id="remote-scroll-down-btn" class="flex-1 bg-gray-700 active:bg-gray-600 rounded-2xl py-6 text-white font-bold text-xl shadow-lg flex flex-col items-center transition select-none"><i class="fa-solid fa-angles-down mb-2 text-3xl text-gray-400"></i> Scroll Down</button>
+        </div>
+
+        <button id="remote-reset-btn" class="w-full max-w-md bg-red-600/80 active:bg-red-500 rounded-2xl py-6 text-white font-bold text-xl mt-4 shadow-lg flex items-center justify-center transition border border-red-500"><i class="fa-solid fa-rotate-left mr-2"></i> Reset to Top</button>
+    </div>
+
+    <script>
+        // State Variables
+        let state = {
+            script: "Welcome to Prompter Pro!\n\nWrite or paste your script here.\n\nUse the settings on the left to adjust:\n- Scroll Speed\n- Font Size\n- Margins\n\nYou can mirror the text horizontally or vertically to match your Neewer teleprompter glass setup.\n\nPRO TIP: You can use a Bluetooth clicker to control this app.\n- Spacebar: Play & Pause\n- Up/Down Arrows: Adjust speed on the fly.\n- W/S Keys or Mouse Scroll: Manually scroll the text.\n\nWhen you press Play, the settings panel will auto-hide to prevent light bleed.",
+            speed: 15,
+            fontSize: 80,
+            margin: 15,
+            mirrorX: false,
+            mirrorY: false,
+            showEyeline: true
+        };
+
+        let isPlaying = false;
+        let currentScrollY = 0;
+        let animationFrameId = null;
+        let lastTimestamp = null;
+
+        // DOM Elements
+        const DOM = {
+            settingsPanel: document.getElementById('settings-panel'),
+            showSettingsBtn: document.getElementById('show-settings-btn'),
+            miniControls: document.getElementById('mini-controls'),
+            scriptInput: document.getElementById('script-input'),
+            speedSlider: document.getElementById('speed-slider'),
+            speedInput: document.getElementById('speed-input'),
+            fontSizeSlider: document.getElementById('font-size-slider'),
+            fontSizeInput: document.getElementById('font-size-input'),
+            marginSlider: document.getElementById('margin-slider'),
+            marginInput: document.getElementById('margin-input'),
+            mirrorXToggle: document.getElementById('mirror-x-toggle'),
+            mirrorYToggle: document.getElementById('mirror-y-toggle'),
+            eyelineToggle: document.getElementById('eyeline-toggle'),
+            fullscreenBtn: document.getElementById('toggle-fullscreen-btn'),
+            playBtn: document.getElementById('play-btn'),
+            resetBtn: document.getElementById('reset-btn'),
+            textContent: document.getElementById('text-content'),
+            textWrapper: document.getElementById('text-wrapper'),
+            eyelineIndicator: document.getElementById('eyeline-indicator'),
+        };
+
+        // Load state from local storage
+        function loadState() {
+            const savedState = localStorage.getItem('prompterState');
+            if (savedState) {
+                try {
+                    state = { ...state, ...JSON.parse(savedState) };
+                } catch (e) { console.error("Error parsing saved state"); }
+            }
+            updateUIFromState();
+            applyStateToPrompter();
+        }
+
+        // Save state to local storage
+        function saveState() {
+            localStorage.setItem('prompterState', JSON.stringify(state));
+        }
+
+        // Update UI
+        function updateUIFromState() {
+            DOM.scriptInput.value = state.script;
+            DOM.speedSlider.value = state.speed;
+            DOM.speedInput.value = state.speed;
+            DOM.fontSizeSlider.value = state.fontSize;
+            DOM.fontSizeInput.value = state.fontSize;
+            DOM.marginSlider.value = state.margin;
+            DOM.marginInput.value = state.margin;
+            DOM.mirrorXToggle.checked = state.mirrorX;
+            DOM.mirrorYToggle.checked = state.mirrorY;
+            DOM.eyelineToggle.checked = state.showEyeline;
+        }
+
+        // Apply state
+        function applyStateToPrompter() {
+            DOM.textContent.innerText = state.script || " ";
+            DOM.textContent.style.fontSize = `${state.fontSize}px`;
+            DOM.textContent.style.paddingLeft = `${state.margin}%`;
+            DOM.textContent.style.paddingRight = `${state.margin}%`;
+            
+            DOM.textWrapper.className = 'relative z-10 w-full h-full transform transition-transform duration-300';
+            if (state.mirrorX && state.mirrorY) {
+                DOM.textWrapper.classList.add('mirror-xy');
+            } else if (state.mirrorX) {
+                DOM.textWrapper.classList.add('mirror-x');
+            } else if (state.mirrorY) {
+                DOM.textWrapper.classList.add('mirror-y');
+            }
+
+            DOM.eyelineIndicator.style.display = state.showEyeline ? 'flex' : 'none';
+        }
+
+        // Scroll Engine
+        function scrollLoop(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const deltaTime = timestamp - lastTimestamp;
+            lastTimestamp = timestamp;
+
+            if (isPlaying) {
+                const speedMultiplier = state.speed * 0.01; 
+                currentScrollY += speedMultiplier * deltaTime;
+                DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+            }
+
+            animationFrameId = requestAnimationFrame(scrollLoop);
+        }
+
+        // Play/Pause Controller
+        function togglePlay() {
+            isPlaying = !isPlaying;
+            
+            if (isPlaying) {
+                DOM.playBtn.innerHTML = '<i class="fa-solid fa-pause mr-2"></i> Pause';
+                DOM.playBtn.classList.replace('bg-blue-600', 'bg-amber-600');
+                DOM.playBtn.classList.replace('hover:bg-blue-500', 'hover:bg-amber-500');
+                hideSettings();
+                document.body.classList.add('cursor-hidden');
+
+                // NEW: Mobile Auto-Landscape & Fullscreen Check
+                if (window.innerWidth < 1024) { 
+                    try {
+                        document.documentElement.requestFullscreen().then(() => {
+                            if (screen.orientation && screen.orientation.lock) {
+                                screen.orientation.lock('landscape').catch(e => console.log("Orientation lock unsupported:", e));
+                            }
+                        }).catch(e => console.log("Fullscreen blocked:", e));
+                    } catch(err) {}
+                }
+
+                lastTimestamp = performance.now();
+                wakeUpControls(); // Trigger mini controls on start
+            } else {
+                DOM.playBtn.innerHTML = '<i class="fa-solid fa-play mr-2"></i> Play';
+                DOM.playBtn.classList.replace('bg-amber-600', 'bg-blue-600');
+                DOM.playBtn.classList.replace('hover:bg-amber-500', 'hover:bg-blue-500');
+                document.body.classList.remove('cursor-hidden');
+                
+                // Keep mini controls visible when paused
+                DOM.miniControls.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+
+                // NEW: Exit Fullscreen/Landscape
+                if (document.fullscreenElement) {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                    if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+                }
+            }
+        }
+
+        // Reset Scroll
+        function resetScroll() {
+            currentScrollY = 0;
+            DOM.textContent.style.transform = `translateY(0px)`;
+            if (isPlaying) togglePlay();
+        }
+
+        function hideSettings() {
+            DOM.settingsPanel.classList.add('settings-hidden');
+            setTimeout(() => { DOM.showSettingsBtn.classList.remove('hidden'); }, 300);
+        }
+
+        function showSettings() {
+            DOM.settingsPanel.classList.remove('settings-hidden');
+            DOM.showSettingsBtn.classList.add('hidden');
+            DOM.miniControls.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4'); // Hide mini controls
+            if (isPlaying) togglePlay(); 
+        }
+
+        function changeSpeed(delta) {
+            let newVal = state.speed + delta;
+            if(newVal > 50) newVal = 50;
+            if(newVal < 1) newVal = 1;
+            state.speed = newVal;
+            DOM.speedSlider.value = state.speed;
+            DOM.speedInput.value = state.speed;
+            saveState();
+            wakeUpControls(); // Keep controls awake when interacting
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {});
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                DOM.fullscreenBtn.innerHTML = '<i class="fa-solid fa-compress mr-2"></i> Exit Fullscreen';
+            } else {
+                DOM.fullscreenBtn.innerHTML = '<i class="fa-solid fa-expand mr-2"></i> Enter Fullscreen';
+            }
+        });
+
+        // UI Listeners
+        DOM.scriptInput.addEventListener('input', (e) => { state.script = e.target.value; applyStateToPrompter(); saveState(); });
+        DOM.speedSlider.addEventListener('input', (e) => { state.speed = parseInt(e.target.value); DOM.speedInput.value = state.speed; saveState(); });
+        DOM.speedInput.addEventListener('input', (e) => { let val = parseInt(e.target.value); if(isNaN(val)) return; if(val>50)val=50; if(val<1)val=1; state.speed = val; DOM.speedSlider.value = state.speed; saveState(); });
+        DOM.fontSizeSlider.addEventListener('input', (e) => { state.fontSize = parseInt(e.target.value); DOM.fontSizeInput.value = state.fontSize; applyStateToPrompter(); saveState(); });
+        DOM.fontSizeInput.addEventListener('input', (e) => { let val = parseInt(e.target.value); if(isNaN(val)) return; if(val>300)val=300; if(val<10)val=10; state.fontSize = val; DOM.fontSizeSlider.value = state.fontSize; applyStateToPrompter(); saveState(); });
+        DOM.marginSlider.addEventListener('input', (e) => { state.margin = parseInt(e.target.value); DOM.marginInput.value = state.margin; applyStateToPrompter(); saveState(); });
+        DOM.marginInput.addEventListener('input', (e) => { let val = parseInt(e.target.value); if(isNaN(val)) return; if(val>45)val=45; if(val<0)val=0; state.margin = val; DOM.marginSlider.value = state.margin; applyStateToPrompter(); saveState(); });
+        DOM.mirrorXToggle.addEventListener('change', (e) => { state.mirrorX = e.target.checked; applyStateToPrompter(); saveState(); });
+        DOM.mirrorYToggle.addEventListener('change', (e) => { state.mirrorY = e.target.checked; applyStateToPrompter(); saveState(); });
+        DOM.eyelineToggle.addEventListener('change', (e) => { state.showEyeline = e.target.checked; applyStateToPrompter(); saveState(); });
+
+        DOM.playBtn.addEventListener('click', togglePlay);
+        DOM.resetBtn.addEventListener('click', resetScroll);
+        DOM.fullscreenBtn.addEventListener('click', toggleFullscreen);
+        DOM.showSettingsBtn.addEventListener('click', showSettings);
+
+        // NEW: Mouse Wheel and Touchpad Scrolling
+        document.addEventListener('wheel', (e) => {
+            // Ignore if scrolling inside the settings menu or script input
+            if (DOM.settingsPanel.contains(e.target)) return;
+
+            currentScrollY += e.deltaY;
+            if (currentScrollY < 0) currentScrollY = 0; // Prevent scrolling past top
+            DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+        }, { passive: true });
+
+
+        // Keyboard Control
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+
+            switch (e.code) {
+                case 'Space':
+                case 'Enter':
+                    e.preventDefault();
+                    togglePlay();
+                    break;
+                case 'KeyW':
+                    // W Key to Scroll Up manually
+                    e.preventDefault();
+                    currentScrollY = Math.max(0, currentScrollY - 60);
+                    DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+                    break;
+                case 'KeyS':
+                    // S Key to Scroll Down manually
+                    e.preventDefault();
+                    currentScrollY += 60;
+                    DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+                    break;
+                case 'ArrowUp':
+                case 'PageUp':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        // Shift + ArrowUp to scroll up
+                        currentScrollY = Math.max(0, currentScrollY - 60);
+                        DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+                    } else if (state.speed > 1) {
+                        // Just ArrowUp to decrease speed (For Remotes)
+                        state.speed--;
+                        DOM.speedSlider.value = state.speed;
+                        DOM.speedInput.value = state.speed;
+                        saveState();
+                    }
+                    break;
+                case 'ArrowDown':
+                case 'PageDown':
+                    e.preventDefault();
+                    if (e.shiftKey) {
+                        // Shift + ArrowDown to scroll down
+                        currentScrollY += 60;
+                        DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+                    } else if (state.speed < 50) {
+                        // Just ArrowDown to increase speed (For Remotes)
+                        state.speed++;
+                        DOM.speedSlider.value = state.speed;
+                        DOM.speedInput.value = state.speed;
+                        saveState();
+                    }
+                    break;
+                case 'Escape':
+                    if (DOM.settingsPanel.classList.contains('settings-hidden')) {
+                        showSettings();
+                    }
+                    break;
+            }
+        });
+
+        // Reveal cursor & Mini Controls temporarily if mouse moves or screen tapped
+        let mouseTimer;
+        let miniControlsTimer;
+        
+        function wakeUpControls() {
+            if (isPlaying) {
+                // Show Cursor and Mini Controls
+                document.body.classList.remove('cursor-hidden');
+                DOM.miniControls.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+                
+                clearTimeout(mouseTimer);
+                clearTimeout(miniControlsTimer);
+                
+                mouseTimer = setTimeout(() => {
+                    if (isPlaying) document.body.classList.add('cursor-hidden');
+                }, 2000);
+
+                miniControlsTimer = setTimeout(() => {
+                    if (isPlaying) DOM.miniControls.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
+                }, 3500); // Hides controls after 3.5 seconds of inactivity
+            }
+        }
+
+        document.addEventListener('mousemove', wakeUpControls);
+        document.addEventListener('touchstart', wakeUpControls, { passive: true }); // Trigger on mobile tap
+
+        let peer = null;
+        let peerConnection = null;
+        const urlParams = new URLSearchParams(window.location.search);
+        const isRemoteMode = urlParams.has('remote');
+        const hostId = urlParams.get('remote');
+
+        function initWebRTC() {
+            peer = new Peer();
+            
+            if (isRemoteMode) {
+                document.getElementById('settings-panel').style.display = 'none';
+                document.getElementById('prompter-container').style.display = 'none';
+                document.getElementById('show-settings-btn').style.display = 'none';
+                
+                const remoteView = document.getElementById('mobile-remote-view');
+                remoteView.classList.remove('hidden');
+                remoteView.classList.add('flex');
+                
+                peer.on('open', () => {
+                    peerConnection = peer.connect(hostId);
+                    const statusText = document.getElementById('remote-connection-status');
+                    
+                    peerConnection.on('open', () => {
+                        statusText.innerHTML = '<i class="fa-solid fa-link"></i> Connected to Prompter';
+                        statusText.classList.replace('text-yellow-400', 'text-green-400');
+                    });
+                    
+                    peerConnection.on('close', () => {
+                        statusText.innerHTML = '<i class="fa-solid fa-link-slash"></i> Disconnected';
+                        statusText.classList.replace('text-green-400', 'text-red-500');
+                    });
+                });
+
+                const btnActions = {
+                    'remote-play-btn': 'togglePlay',
+                    'remote-slower-btn': 'slower',
+                    'remote-faster-btn': 'faster',
+                    'remote-reset-btn': 'reset'
+                };
+
+                for (const [id, cmd] of Object.entries(btnActions)) {
+                    const btn = document.getElementById(id);
+                    btn.addEventListener('touchstart', (e) => { e.preventDefault(); if(peerConnection) peerConnection.send({cmd}); });
+                    btn.addEventListener('mousedown', (e) => { if(peerConnection) peerConnection.send({cmd}); });
+                }
+
+                let scrollInterval;
+                const startScroll = (cmd) => {
+                    if(peerConnection) peerConnection.send({cmd});
+                    scrollInterval = setInterval(() => {
+                        if(peerConnection) peerConnection.send({cmd});
+                    }, 50); 
+                };
+                const stopScroll = () => clearInterval(scrollInterval);
+
+                ['up', 'down'].forEach(dir => {
+                    const btn = document.getElementById(`remote-scroll-${dir}-btn`);
+                    const cmd = dir === 'up' ? 'scrollUp' : 'scrollDown';
+                    
+                    btn.addEventListener('touchstart', (e) => { e.preventDefault(); startScroll(cmd); });
+                    btn.addEventListener('touchend', (e) => { e.preventDefault(); stopScroll(); });
+                    btn.addEventListener('mousedown', (e) => { e.preventDefault(); startScroll(cmd); });
+                    btn.addEventListener('mouseup', stopScroll);
+                    btn.addEventListener('mouseleave', stopScroll);
+                });
+
+            } else {
+                peer.on('open', (id) => {
+                    const remoteUrl = window.location.origin + window.location.pathname + '?remote=' + id;
+                    document.getElementById('qrcode-container').classList.remove('hidden');
+                    document.getElementById('copy-link-btn').classList.remove('hidden');
+                    
+                    const indicator = document.getElementById('remote-status-indicator');
+                    indicator.innerText = 'Ready';
+                    indicator.classList.replace('text-yellow-500', 'text-blue-400');
+                    
+                    new QRCode(document.getElementById("qrcode-container"), {
+                        text: remoteUrl,
+                        width: 120,
+                        height: 120,
+                        colorDark : "#000000",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.L
+                    });
+
+                    document.getElementById('copy-link-btn').onclick = () => {
+                        navigator.clipboard.writeText(remoteUrl);
+                        const btn = document.getElementById('copy-link-btn');
+                        btn.innerHTML = '<i class="fa-solid fa-check mr-2"></i> Copied!';
+                        setTimeout(() => btn.innerHTML = '<i class="fa-solid fa-link mr-2"></i> Copy Remote Link', 2000);
+                    };
+                });
+
+                peer.on('connection', (conn) => {
+                    const indicator = document.getElementById('remote-status-indicator');
+                    indicator.innerText = 'Phone Connected';
+                    indicator.classList.replace('text-blue-400', 'text-green-400');
+                    
+                    conn.on('data', (data) => {
+                        if(data.cmd === 'togglePlay') togglePlay();
+                        if(data.cmd === 'slower') {
+                            if (state.speed > 1) { state.speed--; DOM.speedSlider.value = state.speed; DOM.speedInput.value = state.speed; saveState(); }
+                        }
+                        if(data.cmd === 'faster') {
+                            if (state.speed < 50) { state.speed++; DOM.speedSlider.value = state.speed; DOM.speedInput.value = state.speed; saveState(); }
+                        }
+                        if(data.cmd === 'reset') resetScroll();
+                        
+                        if(data.cmd === 'scrollUp') {
+                            currentScrollY = Math.max(0, currentScrollY - 40); 
+                            DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+                        }
+                        if(data.cmd === 'scrollDown') {
+                            currentScrollY += 40; 
+                            DOM.textContent.style.transform = `translateY(-${currentScrollY}px)`;
+                        }
+                    });
+
+                    conn.on('close', () => {
+                        indicator.innerText = 'Offline';
+                        indicator.classList.replace('text-green-400', 'text-red-500');
+                    });
+                });
+            }
+        }
+
+        if (!isRemoteMode) {
+            loadState();
+            animationFrameId = requestAnimationFrame(scrollLoop);
+        }
+        
+        window.addEventListener('load', () => {
+            if (typeof Peer !== 'undefined') {
+                initWebRTC();
+            }
+
+            // Generate Inline Manifest for PWA (Install to Mobile Homescreen)
+            const manifest = {
+                name: "Pro Teleprompter",
+                short_name: "Prompter",
+                display: "standalone",
+                background_color: "#000000",
+                theme_color: "#000000",
+                orientation: "any",
+                icons: [{
+                    src: "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIj48cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgZmlsbD0iIzAwMCIvPjxwYXRoIGQ9Ik0xMjggMTI4aDI1NnYyNTZIMTI4eiIgZmlsbD0iIzI1NjNFQiIvPjwvc3ZnPg==",
+                    sizes: "512x512",
+                    type: "image/svg+xml"
+                }]
+            };
+            const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/manifest+json'});
+            document.getElementById('manifest-link').href = URL.createObjectURL(manifestBlob);
+        });
+
+    </script>
+</body>
+</html>
